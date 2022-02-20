@@ -1,37 +1,97 @@
-# vue3-demo
+# Vue3源码共读
 
 #### 介绍
 共读vue3源码，并手写一个自己的vue3，一起来学习一下吧~
 
-#### 软件架构
-软件架构说明
+# 版本区别
 
+- 源码采用 `monorepo` 方式进行管理，将模块拆分到package目录中
+- `Vue3` 采用`ts`开发,增强类型检测。 `Vue2` 则采用`flow` 
+- Vue3的性能优化，支持tree-shaking, 不使用就不会被打包。而vue2是由一个个类堆起来的，并且好多方法都放在原型上，无法tree-shaking
+- Vue3后期引入RFC,使得每个版本改动可控rfcs
 
-#### 安装教程
+> 内部代码优化
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+- `Vue3` 劫持数据采用proxy `Vue2` 劫持数据采用`defineProperty`。 `defineProperty`有性能问题和缺陷
+- `Vue3`中对模板编译进行了优化，编译时 生成了Block tree，可以对子节点的动态节点进行收集，可以减少比较，并且采用了 `patchFlag` 标记动态节点
+- `Vue3` 采用`compositionApi` 进行组织功能，解决反复横跳，优化复用逻辑 （mixin带来的数据来源不清晰、命名冲突等）, 相比`optionsApi` 类型推断更加方便
+- 增加了 `Fragment`,`Teleport`，`Suspense`组件
 
-#### 使用说明
+# 架构分析
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+## 一、Monorepo介绍
 
-#### 参与贡献
+​	`Monorepo` 是管理项目代码的一个方式，指在一个项目仓库(`repo`)中管理多个模块/包(package)
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+1. 优点
+   - **可见性（Visibility）**：每个人都可以看到其他人的代码，这样可以带来更好的协作和跨团队贡献——不同团队的开发人员都可以修复代码中的bug，而你甚至都不知道这个bug的存在。
+   - **更简单的依赖关系管理（Simpler dependency management）**：共享依赖关系很简单，因为所有模块都托管在同一个存储库中，因此都不需要包管理器。
+   - **唯一依赖源（Single source of truth）**：每个依赖只有一个版本，意味着没有版本冲突，没有依赖地狱。
+   - **一致性（Consistency）**：当你把所有代码库放在一个地方时，执行代码质量标准和统一的风格会更容易。
+   - **共享时间线（Shared timeline）**：API或共享库的变更会立即被暴露出来，迫使不同团队提前沟通合作，每个人都得努力跟上变化。
+   - **原子提交（Atomic commits）**：原子提交使大规模重构更容易，开发人员可以在一次提交中更新多个包或项目。
+   - **隐式CI（Implicit CI）**：因为所有代码已经统一维护在一个地方，因此可以保证持续集成[3]。
+   - **统一的CI/CD（Unified CI/CD）**：可以为代码库中的每个项目使用相同的CI/CD[4]部署流程。
+   - **统一的构建流程（Unified build process）**：代码库中的每个应用程序可以共享一致的构建流程[5]。
+2. 缺点	
+   - **仓库体积大 **：由于多个包都统一放在一个仓库里面，必然会导致仓库体积庞大。
+   - **性能差（Bad performance）**：单一代码库难以扩大规模，像git blame这样的命令可能会不合理的花费很长时间执行，IDE也开始变得缓慢，生产力受到影响，对每个提交测试整个repo变得不可行。
+   - **破坏主线（Broken main/master）**：主线损坏会影响到在单一代码库中工作的每个人，这既可以被看作是灾难，也可以看作是保证测试既可以保持简洁又可以跟上开发的好机会。
+   - **学习曲线（Learning curve）**：如果代码库包含了许多紧密耦合的项目，那么新成员的学习曲线会更陡峭。
+   - **大量的数据（Large volumes of data）**：单一代码库每天都要处理大量的数据和提交。
+   - **所有权（Ownership）**：维护文件的所有权更有挑战性，因为像Git或Mercurial这样的系统没有内置的目录权限。
+   - **Code reviews**：通知可能会变得非常嘈杂。例如，GitHub有有限的通知设置，不适合大量的pull request和code review。
 
+## 二、Vue3项目结构
 
-#### 特技
+- **`reactivity`**:响应式系统
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+- **`runtime-core`**:与平台无关的运行时核心 (可以创建针对特定平台的运行时 - 自定义渲染器)
+
+- **`runtime-dom`**: 针对浏览器的运行时。包括`DOM API`，属性，事件处理等
+
+- **`runtime-test`**:用于测试
+
+- **`server-renderer`**:用于服务器端渲染
+
+- **`compiler-core`**:与平台无关的编译器核心
+
+- **`compiler-dom`**: 针对浏览器的编译模块
+
+- **`compiler-ssr`**: 针对服务端渲染的编译模块
+
+- **`compiler-sfc`**: 针对单文件解析
+
+- **`size-check`**:用来测试代码体积
+
+- **`template-explorer`**：用于调试编译器输出的开发工具
+
+- **`shared`**：多个包之间共享的内容
+
+- **`vue`**:完整版本,包括运行时和编译器
+
+  ------
+
+  ```
+                              +---------------------+
+                              |                     |
+                              |  @vue/compiler-sfc  |
+                              |                     |
+                              +-----+--------+------+
+                                    |        |
+                                    v        v
+                 +---------------------+    +----------------------+
+                 |                     |    |                      |
+       +-------->|  @vue/compiler-dom  +--->|  @vue/compiler-core  |
+       |         |                     |    |                      |
+  +----+----+    +---------------------+    +----------------------+
+  |         |
+  |   vue   |
+  |         |
+  +----+----+   +---------------------+    +----------------------+    +-------------------+
+      |         |                     |    |                      |    |                   |
+      +-------->|  @vue/runtime-dom   +--->|  @vue/runtime-core   +--->|  @vue/reactivity  |
+                |                     |    |                      |    |                   |
+                +---------------------+    +----------------------+    +-------------------+
+  ```
+
