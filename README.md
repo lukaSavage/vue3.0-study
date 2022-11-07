@@ -214,6 +214,101 @@ export function reactive(target) {
 
 ## 2.effect 副作用函数
 
+特点：
+
+- 该函数默认一开始执行一次
+- 通过ReactiveEffect实现依赖的收集
+
+### 2.1 确立当前作用域下对应的**activeEffect**
+
+1. 设定全局变量<font color='#f00'>`activeEffect`</font>,确定当前作用域对应的是哪一个`effect`
+
+   > 这点主要是通过try finally语法配合`this.parent`、`activeEffect变量`来实现的
+
+   补充：
+
+   - 第一次执行的时候，parent=undefined,此时activeEffect = 当前第一个effect,即e1实例
+   - （这个时候 return this.fn(),即 进入到第二个effect中）
+   - 碰到第二个effect的时候，parent= e1,此时activeEffect指向第二个effect,即e2实例
+   - (return this.fn之后，出栈，又再一次进入到e1的作用域中，执行finally代码块的代码，此时activeEffect指向e1实例，this.parent值为undefined)
+   -  执行完第二个e2的作用域后，又回到了e1所在的作用域，继续执行，只剩下e1的finally代码，此时activeEffect的指向为undefined,this.parent也是undefined.
+   - 结束所有流程。
+
+```tsx
+export let activeEffect = undefined; // 当前正在执行的effect
+export class ReactiveEffect {
+  active = true; // 标记effect是否处于激活状态
+  deps = []; // 收集effect中使用到的属性
+  parent = undefined;
+  constructor(public fn) {}
+  run() {
+    if (!this.active) {
+      // 不是激活状态，就不需要考虑依赖收集，也就是不需要将这个effect放到全局变量上
+      return this.fn();
+    }
+
+    /* ★★★ 实现第一步的核心代码 ★★★  */
+    try {
+      this.parent = activeEffect; // 当前的effect就是他的父亲
+      activeEffect = this; // 设置成正在激活的是当前effect
+      return this.fn();
+    } finally {
+      activeEffect = this.parent; // 执行完毕后还原activeEffect
+      this.parent = undefined;
+    }
+  }
+}
+export function effect(fn, options?) {
+  const _effect = new ReactiveEffect(fn); // 创建响应式effect
+  _effect.run(); // 让响应式effect默认执行
+}
+```
+
+### 2.2 依赖收集的核心方法track的实现
+
+```tsx
+get(target, key, receiver) {
+    if (key === ReactiveFlags.IS_REACTIVE) {
+        return true;
+    }
+    const res = Reflect.get(target, key, receiver);
+    track(target, 'get', key);  // 依赖收集
+    return res;
+}
+```
+
+```tsx
+const targetMap = new WeakMap(); // 记录依赖关系
+export function track(target, type, key) {
+    // 取值操作没有发生在effect中,直接不管
+    /*
+    	接下来我们需要维护的映射对象如下↓
+    	mapping = {
+    		target: {
+    			name: [activeEffect, activeEffect....]
+    		}
+    	}
+    */
+    if (activeEffect) {
+        let depsMap = targetMap.get(target); // {对象：map}
+        if (!depsMap) {
+            targetMap.set(target, (depsMap = new Map()))
+        }
+        let dep = depsMap.get(key);
+        if (!dep) {
+            depsMap.set(key, (dep = new Set())) // {对象：{ 属性 :[ dep, dep ]}}
+        }
+        let shouldTrack = !dep.has(activeEffect)
+        if (shouldTrack) {
+            dep.add(activeEffect);
+            activeEffect.deps.push(dep); // 让effect记住dep，这样后续可以用于清理
+        }
+    }
+}
+```
+
+
+
 ## 3.computed计算属性
 
 > 计算属性的目的是根据状态衍生属性，我们希望这个属性有缓存功能。如果<font color="#f00">依赖的数据不变就不会重新计算。</font>
